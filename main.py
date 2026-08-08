@@ -1,6 +1,9 @@
+import json
+import os
 import re
 import textwrap
 import tkinter as tk
+from datetime import datetime
 from tkinter import font as tkfont
 from passage_generator import fetch_scraped_passage
 
@@ -9,6 +12,39 @@ from passage_generator import fetch_scraped_passage
 # line (top line drops off, the next line of the passage appears at the
 # bottom) - the same conveyor-belt behavior typingtest.com uses.
 VISIBLE_LINES = 3
+HIGH_SCORES_PATH = os.path.join(os.path.dirname(__file__), "high_scores.json")
+
+
+def load_high_scores(path=HIGH_SCORES_PATH):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            scores = json.load(handle)
+        if isinstance(scores, list):
+            return scores
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    return []
+
+
+def save_high_scores(scores, path=HIGH_SCORES_PATH):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(scores, handle, indent=2)
+
+
+def record_high_score(wpm, accuracy, correct_words, path=HIGH_SCORES_PATH, name="Player"):
+    scores = load_high_scores(path)
+    entry = {
+        "name": name or "Player",
+        "wpm": int(wpm),
+        "accuracy": round(float(accuracy), 1),
+        "correct_words": int(correct_words),
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+    }
+    scores.append(entry)
+    scores.sort(key=lambda item: (item["wpm"], item["accuracy"], item["correct_words"]), reverse=True)
+    save_high_scores(scores[:10], path)
+    return scores[:10]
 
 
 class TypingSpeedTest(tk.Tk):
@@ -24,6 +60,9 @@ class TypingSpeedTest(tk.Tk):
         self.timer_started = False
         self.reference_words = []
         self.after_id = None
+        self.training_mode = False
+        self.player_name = tk.StringVar(value="Player")
+        self.mode_var = tk.StringVar(value="timed")
 
         self.mono_font = tkfont.Font(family="Consolas", size=14)
         self.build_setup_screen()
@@ -35,6 +74,27 @@ class TypingSpeedTest(tk.Tk):
 
         tk.Label(frame, text="Typing Speed Test", font=("Segoe UI", 28, "bold"),
                  bg="#1e1e2e", fg="#f5f5f5").pack(pady=(0, 20))
+
+        player_row = tk.Frame(frame, bg="#1e1e2e")
+        player_row.pack(pady=(0, 10))
+        tk.Label(player_row, text="Player name:", font=("Segoe UI", 12),
+                 bg="#1e1e2e", fg="#cfcfcf").pack(side="left", padx=(0, 10))
+        tk.Entry(player_row, textvariable=self.player_name, width=18,
+                 font=("Segoe UI", 12), bg="#313244", fg="#f5f5f5",
+                 insertbackground="#f5f5f5").pack(side="left")
+
+        tk.Label(frame, text="Choose mode:", font=("Segoe UI", 14),
+                 bg="#1e1e2e", fg="#cfcfcf").pack(pady=(0, 10))
+
+        mode_frame = tk.Frame(frame, bg="#1e1e2e")
+        mode_frame.pack(pady=(0, 8))
+        for mode, label in (("timed", "Timed Challenge"), ("training", "Training Mode")):
+            tk.Radiobutton(mode_frame, text=label, variable=self.mode_var, value=mode,
+                           font=("Segoe UI", 12), bg="#1e1e2e", fg="#f5f5f5",
+                           selectcolor="#313244", activebackground="#1e1e2e",
+                           activeforeground="#f5f5f5", indicatoron=True
+                           ).pack(side="left", padx=10)
+
         tk.Label(frame, text="Choose test duration:", font=("Segoe UI", 14),
                  bg="#1e1e2e", fg="#cfcfcf").pack(pady=(0, 10))
 
@@ -48,16 +108,56 @@ class TypingSpeedTest(tk.Tk):
                            activeforeground="#f5f5f5", indicatoron=True
                            ).pack(side="left", padx=10)
 
-        tk.Button(frame, text="Start Test", font=("Segoe UI", 14, "bold"),
+        button_row = tk.Frame(frame, bg="#1e1e2e")
+        button_row.pack(pady=25)
+        tk.Button(button_row, text="Start", font=("Segoe UI", 14, "bold"),
                   bg="#89b4fa", fg="#1e1e2e", activebackground="#74a8f9",
                   relief="flat", padx=20, pady=8, command=self.start_test
-                  ).pack(pady=30)
+                  ).pack(side="left", padx=(0, 15))
+        tk.Button(button_row, text="High Scores", font=("Segoe UI", 13, "bold"),
+                  bg="#a6e3a1", fg="#1e1e2e", activebackground="#8acc91",
+                  relief="flat", padx=18, pady=8, command=self.show_high_scores
+                  ).pack(side="left")
 
     # ------------------------------------------------------------------
     # TEST SCREEN
     # ------------------------------------------------------------------
+    def show_high_scores(self):
+        self.clear_window()
+        frame = tk.Frame(self, bg="#1e1e2e")
+        frame.pack(expand=True, fill="both", padx=30, pady=30)
+
+        tk.Label(frame, text="High Scores", font=("Segoe UI", 26, "bold"),
+                 bg="#1e1e2e", fg="#f5f5f5").pack(pady=(0, 20))
+
+        scores = load_high_scores()
+        if not scores:
+            tk.Label(frame, text="No scores recorded yet.", font=("Segoe UI", 14),
+                     bg="#1e1e2e", fg="#cfcfcf").pack()
+        else:
+            score_frame = tk.Frame(frame, bg="#1e1e2e")
+            score_frame.pack(fill="x")
+            headers = ["Rank", "Name", "WPM", "Accuracy"]
+            for col, title in enumerate(headers):
+                tk.Label(score_frame, text=title, font=("Segoe UI", 11, "bold"),
+                         bg="#1e1e2e", fg="#f5f5f5", width=14, anchor="w").grid(row=0, column=col, padx=10, pady=4)
+            for index, score in enumerate(scores[:10], start=1):
+                tk.Label(score_frame, text=str(index), font=("Segoe UI", 11),
+                         bg="#1e1e2e", fg="#cfcfcf", width=14, anchor="w").grid(row=index, column=0, padx=10, pady=3)
+                tk.Label(score_frame, text=score["name"], font=("Segoe UI", 11),
+                         bg="#1e1e2e", fg="#f5f5f5", width=14, anchor="w").grid(row=index, column=1, padx=10, pady=3)
+                tk.Label(score_frame, text=str(score["wpm"]), font=("Segoe UI", 11),
+                         bg="#1e1e2e", fg="#a6e3a1", width=14, anchor="w").grid(row=index, column=2, padx=10, pady=3)
+                tk.Label(score_frame, text=f"{score['accuracy']}%", font=("Segoe UI", 11),
+                         bg="#1e1e2e", fg="#89b4fa", width=14, anchor="w").grid(row=index, column=3, padx=10, pady=3)
+
+        tk.Button(frame, text="Back to Menu", font=("Segoe UI", 13, "bold"),
+                  bg="#89b4fa", fg="#1e1e2e", relief="flat", padx=20, pady=8,
+                  command=self.build_setup_screen).pack(pady=30)
+
     def start_test(self):
-        self.duration_seconds = self.selected_minutes.get() * 60
+        self.training_mode = self.mode_var.get() == "training"
+        self.duration_seconds = self.selected_minutes.get() * 60 if not self.training_mode else 60
         self.time_left = self.duration_seconds
         self.timer_running = False
         self.timer_started = False
@@ -78,6 +178,10 @@ class TypingSpeedTest(tk.Tk):
         self.wpm_live_label = tk.Label(top_bar, text="WPM: 0", font=("Segoe UI", 14),
                                        bg="#1e1e2e", fg="#a6e3a1")
         self.wpm_live_label.pack(side="right")
+
+        if self.training_mode:
+            tk.Label(top_bar, text="Training mode", font=("Segoe UI", 11, "bold"),
+                     bg="#1e1e2e", fg="#f5f5f5").pack(side="right", padx=(0, 12))
 
         # Create the passage box EMPTY first and pack it, so we can measure
         # its real rendered pixel width before deciding how to wrap the text.
@@ -347,6 +451,9 @@ class TypingSpeedTest(tk.Tk):
         minutes = self.duration_seconds / 60
         wpm = round(correct / minutes) if minutes > 0 else 0
 
+        if not self.training_mode:
+            record_high_score(wpm, accuracy, correct, name=self.player_name.get() or "Player")
+
         self.show_results(wpm, accuracy, correct, incorrect, total_typed)
 
     def show_results(self, wpm, accuracy, correct, incorrect, total_typed):
@@ -372,9 +479,21 @@ class TypingSpeedTest(tk.Tk):
             tk.Label(row, text=str(value), font=("Segoe UI", 14, "bold"),
                      bg="#1e1e2e", fg=color, anchor="w").pack(side="left")
 
-        tk.Button(frame, text="Try Again", font=("Segoe UI", 13, "bold"),
+        if not self.training_mode:
+            latest = load_high_scores()[:1]
+            if latest:
+                top = latest[0]
+                tk.Label(frame, text=f"Leaderboard: {top['name']} - {top['wpm']} WPM",
+                         font=("Segoe UI", 12), bg="#1e1e2e", fg="#f9e2af").pack(pady=(15, 0))
+
+        button_row = tk.Frame(frame, bg="#1e1e2e")
+        button_row.pack(pady=30)
+        tk.Button(button_row, text="Try Again", font=("Segoe UI", 13, "bold"),
                   bg="#89b4fa", fg="#1e1e2e", relief="flat", padx=20, pady=8,
-                  command=self.build_setup_screen).pack(pady=30)
+                  command=self.build_setup_screen).pack(side="left", padx=(0, 12))
+        tk.Button(button_row, text="High Scores", font=("Segoe UI", 13, "bold"),
+                  bg="#a6e3a1", fg="#1e1e2e", relief="flat", padx=18, pady=8,
+                  command=self.show_high_scores).pack(side="left")
 
     def clear_window(self):
         for widget in self.winfo_children():

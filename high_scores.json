@@ -1,0 +1,16 @@
+[
+  {
+    "name": "David",
+    "wpm": 81,
+    "accuracy": 97.6,
+    "correct_words": 81,
+    "date": "2026-08-08 15:01"
+  },
+  {
+    "name": "Daniel",
+    "wpm": 60,
+    "accuracy": 89.6,
+    "correct_words": 120,
+    "date": "2026-08-08 14:59"
+  }
+]
